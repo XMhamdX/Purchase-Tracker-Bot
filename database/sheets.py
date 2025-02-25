@@ -100,35 +100,33 @@ def add_to_sheets(product: str, price: float, notes: str = "") -> bool:
             logger.error("السعر غير صالح")
             return False
             
-        if not isinstance(notes, str):
-            notes = ""
-            
-        # الحصول على التاريخ الحالي
-        current_date = datetime.now().strftime("%Y-%m-%d %H:%M")
-            
-        # محاولة الاتصال بالجدول
-        try:
-            sheet = setup_google_sheets()
-        except Exception as e:
-            logger.error(f"خطأ في الاتصال بالجدول: {str(e)}")
-            logger.error(traceback.format_exc())
+        # الحصول على ورقة العمل
+        worksheet = setup_google_sheets()
+        if not worksheet:
+            logger.error("فشل الاتصال بـ Google Sheets")
             return False
             
-        if not sheet:
-            logger.error("فشل الاتصال بجدول البيانات")
-            return False
-            
-        # إضافة البيانات في الأعمدة الصحيحة
         try:
-            sheet.append_row([current_date, product, price, notes])
-            logger.info(f"تمت إضافة {product} بنجاح")
+            # تنسيق التاريخ بالشكل المطلوب (YYYY/MM/DD)
+            current_date = datetime.now().strftime("%Y/%m/%d")
+            
+            # إضافة الصف الجديد
+            worksheet.append_row([
+                current_date,
+                product,
+                price,
+                notes
+            ])
+            
+            logger.info(f"تم إضافة المنتج بنجاح: {product}")
             return True
+            
         except Exception as e:
-            logger.error(f"خطأ في إضافة البيانات إلى الجدول: {str(e)}")
+            logger.error(f"خطأ في إضافة المنتج: {str(e)}")
             logger.error(traceback.format_exc())
             return False
             
     except Exception as e:
-        logger.error(f"خطأ في إضافة البيانات: {str(e)}")
+        logger.error(f"خطأ غير متوقع: {str(e)}")
         logger.error(traceback.format_exc())
         return False

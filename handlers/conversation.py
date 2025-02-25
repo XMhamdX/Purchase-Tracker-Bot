@@ -48,10 +48,26 @@ async def handle_any_message(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         error_count += 1
                         continue
                         
-                    product = " ".join(parts[:-1])
+                    # البحث عن أول رقم في النص
+                    price_index = -1
+                    for i, part in enumerate(parts):
+                        try:
+                            float(part)
+                            price_index = i
+                            break
+                        except ValueError:
+                            continue
+                            
+                    if price_index == -1:
+                        error_count += 1
+                        continue
+                        
+                    # استخراج المنتج والسعر والملاحظات
+                    product = " ".join(parts[:price_index])
                     try:
-                        price = float(parts[-1])
-                        if add_to_sheets(product, price, ""):
+                        price = float(parts[price_index])
+                        notes = " ".join(parts[price_index + 1:]) if price_index + 1 < len(parts) else ""
+                        if add_to_sheets(product, price, notes):
                             success_count += 1
                         else:
                             error_count += 1
@@ -75,60 +91,82 @@ async def handle_any_message(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await update.message.reply_text(WELCOME_MESSAGE)
             return ConversationHandler.END
             
-        # محاولة فصل المنتج عن السعر
+        # البحث عن أول رقم في النص
         parts = message_text.split()
-        if len(parts) >= 2:
+        price_index = -1
+        for i, part in enumerate(parts):
             try:
                 # تحويل الأرقام العربية إلى إنجليزية
-                last_part = convert_to_english_numbers(parts[-1])
-                price = float(last_part)
-                product = " ".join(parts[:-1])
+                english_number = convert_to_english_numbers(part)
+                float(english_number)
+                price_index = i
+                break
+            except ValueError:
+                continue
+                
+        if price_index != -1:
+            try:
+                # استخراج المنتج والسعر والملاحظات
+                product = " ".join(parts[:price_index])
+                price = float(convert_to_english_numbers(parts[price_index]))
+                notes = " ".join(parts[price_index + 1:]) if price_index + 1 < len(parts) else ""
                 
                 # محاولة إضافة المنتج للجدول
-                if add_to_sheets(product, price, ""):
-                    await update.message.reply_text(f"✅ تم إضافة {product} بسعر {price} بنجاح!")
+                if add_to_sheets(product, price, notes):
+                    success_msg = f"✅ تم إضافة {product} بسعر {price}"
+                    if notes:
+                        success_msg += f" مع ملاحظة: {notes}"
+                    await update.message.reply_text(success_msg)
                     await update.message.reply_text(WELCOME_MESSAGE)
                     return ConversationHandler.END
                 else:
-                    # إذا فشلت الإضافة، نطلب من المستخدم المحاولة مرة أخرى
                     await update.message.reply_text("❌ حدث خطأ في إضافة المنتج. الرجاء المحاولة مرة أخرى.")
                     return ConversationHandler.END
-                
+                    
             except ValueError:
                 # إذا لم يكن آخر جزء رقماً، نعتبر الكل اسم منتج
                 pass
                 
         # إذا وصلنا هنا، نعتبر النص كله اسم منتج
         context.user_data['product'] = message_text
-        await update.message.reply_text("💰 أدخل سعر المنتج (رقم فقط):")
+        await update.message.reply_text("💰 أدخل السعر:")
         return PRICE
         
     except Exception as e:
-        logger.error(f"خطأ غير متوقع: {str(e)}")
-        await update.message.reply_text("❌ حدث خطأ غير متوقع. الرجاء المحاولة مرة أخرى.")
+        logger.error(f"خطأ في معالجة الرسالة: {str(e)}")
+        logger.error(traceback.format_exc())
+        await update.message.reply_text("❌ حدث خطأ. الرجاء المحاولة مرة أخرى.")
         return ConversationHandler.END
 
 async def price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """معالج إدخال السعر"""
     try:
-        # تحويل الأرقام العربية إلى إنجليزية قبل التحويل
-        price_text = convert_to_english_numbers(update.message.text)
-        price = float(price_text)
-        context.user_data['price'] = price
-        await update.message.reply_text(
-            '📝 أدخل ملاحظات إضافية\n'
-            'يمكنك تخطي الملاحظات عن طريق:\n'
-            '- إرسال "." (نقطة)\n'
-            '- إرسال "لا"\n'
-            '- استخدام الأمر /skip'
-        )
-        return NOTES
-    except ValueError:
-        logger.warning(f"قيمة غير صحيحة للسعر: {update.message.text}")
-        await update.message.reply_text(
-            '❌ الرجاء إدخال رقم صحيح للسعر'
-        )
-        return PRICE
+        # تحويل الأرقام العربية إلى إنجليزية
+        price_text = convert_to_english_numbers(update.message.text.strip())
+        
+        try:
+            price = float(price_text)
+            if price < 0:
+                raise ValueError("السعر سالب")
+                
+            product = context.user_data.get('product', '')
+            if add_to_sheets(product, price, ""):
+                await update.message.reply_text(f"✅ تم إضافة {product} بسعر {price} بنجاح!")
+                await update.message.reply_text(WELCOME_MESSAGE)
+                return ConversationHandler.END
+            else:
+                await update.message.reply_text("❌ حدث خطأ في إضافة المنتج. الرجاء المحاولة مرة أخرى.")
+                return ConversationHandler.END
+                
+        except ValueError:
+            await update.message.reply_text("❌ الرجاء إدخال رقم صحيح للسعر")
+            return PRICE
+            
+    except Exception as e:
+        logger.error(f"خطأ في معالجة السعر: {str(e)}")
+        logger.error(traceback.format_exc())
+        await update.message.reply_text("❌ حدث خطأ. الرجاء المحاولة مرة أخرى.")
+        return ConversationHandler.END
 
 async def notes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """معالج إدخال الملاحظات"""
