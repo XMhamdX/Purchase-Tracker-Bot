@@ -20,9 +20,16 @@ from pathlib import Path
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler
 
-from src.config import TOKEN, PRICE, NOTES
-from handlers.commands import start_command, help_command, skip_command
-from handlers.conversation import handle_any_message, price, notes
+from src.config import TOKEN, PRICE, NOTES, PRODUCT
+from handlers.commands import (
+    start_command, 
+    help_command, 
+    skip_command, 
+    cancel,
+    handle_product,
+    handle_price,
+    handle_notes,
+)
 
 # إعداد التسجيل
 logging.basicConfig(
@@ -88,18 +95,29 @@ def main() -> None:
         app.add_error_handler(error_handler)
         
         logger.info("جاري إعداد معالج المحادثة...")
+        logger.info("تسجيل الأوامر: start, s, cancel")
         conv_handler = ConversationHandler(
             entry_points=[
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_any_message)
+                CommandHandler('start', start_command),
             ],
             states={
-                PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, price)],
+                PRODUCT: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, handle_product),
+                    CommandHandler('s', skip_command),
+                ],
+                PRICE: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, handle_price),
+                    CommandHandler('s', skip_command),
+                ],
                 NOTES: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, notes),
-                    CommandHandler("skip", skip_command)
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, handle_notes),
+                    CommandHandler('s', skip_command),
                 ],
             },
-            fallbacks=[CommandHandler("start", start_command)],
+            fallbacks=[
+                CommandHandler('start', start_command),
+                CommandHandler('cancel', cancel),
+            ],
             name="المحادثة_الرئيسية",
             persistent=False
         )
@@ -107,7 +125,6 @@ def main() -> None:
         
         logger.info("جاري إضافة المعالجات...")
         app.add_handler(conv_handler)
-        app.add_handler(CommandHandler("start", start_command))
         app.add_handler(CommandHandler("help", help_command))
         logger.info("تم إضافة المعالجات بنجاح")
         
